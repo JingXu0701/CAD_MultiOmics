@@ -1,0 +1,115 @@
+---
+title: "fig6"
+author: "daidie"
+date: "2025/8/18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R fig6_genebar
+
+```{r StaForGene}
+if (!requireNamespace("rstatix", quietly = TRUE)) install.packages("rstatix")
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+if (!requireNamespace("FSA", quietly = TRUE)) install.packages("FSA")
+
+library(rstatix)
+library(dplyr)
+library(FSA)
+
+df <- SabunMeta
+
+excluded_cols <- c("SampleName", "Age", "BMI")
+feature_cols <- setdiff(names(df), excluded_cols) %>% 
+  grep("Group", ., invert = TRUE, value = TRUE)  
+
+
+kw_results <- list()
+dunn_results <- list()
+wilcox_results <- list()
+
+for (feature in feature_cols) {
+    kw_test <- tryCatch({
+        df %>% 
+            kruskal_test(as.formula(paste(feature, "~ Group"))) %>% 
+            mutate(Feature = feature, .before = 1) %>% 
+            dplyr::select(Feature, everything())
+    }, error = function(e) {
+        message(paste("Error in Kruskal-Wallis for feature", feature, ":", e$message))
+        return(NULL)
+    })
+
+    if (is.null(kw_test)) {
+        kw_results[[feature]] <- data.frame(Feature = feature, Error = "Kruskal-Wallis Error")
+        next
+    }
+
+   
+    kw_results[[feature]] <- kw_test
+
+  
+    dunn_test <- tryCatch({
+        df %>% 
+            dunn_test(as.formula(paste(feature, "~ Group")), p.adjust.method = "BH") %>% 
+            mutate(Feature = feature, .before = 1)
+    }, error = function(e) {
+        message(paste("Error in Dunn test for feature", feature, ":", e$message))
+        return(NULL)
+    })
+
+    dunn_results[[feature]] <- dunn_test
+
+    wilcox_test <- tryCatch({
+        df %>% 
+            wilcox_test(as.formula(paste(feature, "~ Group")), p.adjust.method = "BH") %>% 
+            mutate(Feature = feature, .before = 1)
+    }, error = function(e) {
+        message(paste("Error in Wilcoxon test for feature", feature, ":", e$message))
+        return(NULL)
+    })
+
+    wilcox_results[[feature]] <- wilcox_test
+}
+
+final_kw <- bind_rows(kw_results)
+final_dunn <- bind_rows(dunn_results)
+final_wilcox <- bind_rows(wilcox_results)
+
+write.csv(final_kw, "Kruskal_Wallis_Results_all.csv", row.names = FALSE)
+write.csv(final_dunn, "Dunns_Posthoc_Results_all.csv", row.names = FALSE)
+write.csv(final_wilcox, "Wilcoxon_Pairwise_Results_all.csv", row.names = FALSE)
+
+
+
+```
+
+
+
+
+
+
+```{r genebar}
+df <- SabunMeta
+list <- names(df)
+list1 <- list[-(1:4)]
+df_long <- pivot_longer(df, cols = list1, names_to = "Variable", values_to = "Value")
+
+
+p_facet <- ggplot(df_long, aes(x = Group, y = Value, fill = Group)) +
+  geom_bar(stat = "summary", fun = "mean", position = position_dodge()) +
+  facet_wrap(~ Variable, scales = "free_y") + 
+  theme_minimal()+
+  scale_fill_manual(values =  palette) +
+  theme(panel.grid.major =element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(),axis.line = element_line(colour = "black"))+  
+  theme(plot.title = element_text(face="bold", size=12,hjust=0.5), axis.title.y=element_text(size=10,face="bold"),axis.title.x=element_text(size=0,face="bold"))+
+  theme(axis.text.x= element_text(size=11, color="black", face= "bold", vjust=0, hjust=0,angle=0))
+
+pdf(paste0("output1/facet_geneabundance_11selectgene.pdf"))
+  print(p_facet)
+dev.off()
+
+```
+
