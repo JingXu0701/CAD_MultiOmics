@@ -1,0 +1,92 @@
+---
+title: "fig5"
+output: html_document
+date: "2025-08-18"
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(tidyr)
+library(dplyr)
+if (!require(ggbreak)) install.packages("ggbreak")
+
+install.packages("aplot")
+install.packages("https://cran.r-project.org/src/contrib/ggbreak_0.1.2.tar.gz", repos = NULL, type = "source")
+library(ggbreak)
+library(patchwork)
+remotes::install_github("YuLab-SMU/aplot")
+
+palette <- c("NP" = "#72BCD5", "ACS" = "#E76254", "primary" = "#F7AA58","recovery" = "#FFD06F")
+comparisonslist <- list(c("NP", "ACS"),c("primary", "ACS"),c("ACS", "recovery"),c("NP", "primary"),c("NP", "recovery"), c("primary", "recovery"))
+
+ACSspecies <-  read_excel("metSpecies_share_ACSsCAD.xlsx")
+ACSspecies1 <- names(ACSspecies)[5:20] 
+
+Sabun <- read_excel("species4group_SabunMeta.xlsx")
+Sabun_ACSspecific <- Sabun %>% select("SampleName","Group",all_of(ACSspecies1))
+
+df <- Sabun_ACSspecific
+
+-----------------------------------------------
+df_long <- tidyr::gather(df, key="Microbe", value="Abundance", -Group, -SampleName)
+  
+-------------
+df_long <- df_long %>%
+  mutate(LogAbundance = log10(Abundance + 1))
+  
+-----
+df_long <- df_long %>%
+  mutate(Group1 = case_when(
+    Group == "A" ~ "NP",
+    Group == "B" ~ "primary",
+    Group == "C" ~ "ACS",
+    Group == "D" ~ "recovery",
+    TRUE ~ Group  
+  )) 
+
+df_long$Group1 <- factor(df_long$Group1,levels = c("NP","primary","ACS","recovery"))
+
+p <- ggplot(df_long, aes(x = Microbe, y = LogAbundance, fill = Group1)) +
+  stat_summary(fun.data = min.mean.sd.max, geom = "boxplot", position = position_dodge(width = 1))+
+  facet_wrap(~Microbe, scales = "free")+
+  scale_fill_manual(values = palette)+
+  scale_color_manual(values = palette)+
+  theme_minimal() +
+  labs(title = "Log10 Transformed Bacteria Abundance by Group", x = "Bacteria", y = "Log10 Abundance") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))  
+
+pdf("Result/recovery_abundance.pdf",width = 8,height = 8)
+p
+dev.off()  
+  
+-------
+  # function for computing mean, DS, max and min values
+  min.mean.sd.max <- function(x) {
+    r <- c(min(x), mean(x) - sd(x), mean(x), mean(x) + sd(x), max(x))
+    names(r) <- c("ymin", "lower", "middle", "upper", "ymax")
+    r
+  } 
+
+
+-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+## heatmap
+if (!require("pheatmap")) install.packages("pheatmap")
+library(pheatmap)  
+data <- df %>% data.frame()
+rownames(data) <- data$SampleName
+data1 <-data[,3:ncol(data)]
+group_means <- aggregate(. ~ Group, data = data[, -c(1)], FUN = mean)
+rownames(group_means) <- c("NCA","Primary","ACS","Recovery")
+
+pheat <- pheatmap(group_means[, -1], cluster_rows = FALSE, cluster_cols = TRUE,
+         color = colorRampPalette(c("blue", "white", "red"))(100),scale ="column",
+         main = "Average Abundance of Bacteria by Group")  
+pdf("Result/Recovery-heatmap.pdf")
+pheat
+dev.off()
+
+
+```
+

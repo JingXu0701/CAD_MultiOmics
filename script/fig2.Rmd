@@ -1,0 +1,478 @@
+---
+title: "Figure2"
+output: html_document
+date: "2025-08-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Figure2AB
+
+```{r fig2AB}
+library(vegan)  
+
+otu <- read.csv('species.csv',row.names = 1)  
+
+colSums(otu)
+
+otu_Flattening <- as.data.frame(t(rrarefy(t(otu),min(colSums(otu)))))
+
+colSums(otu_Flattening)
+
+write.csv(otu_Flattening,"otu_Flattening.csv")
+
+
+library("picante")
+
+otu <- read.csv("otu_Flattening.csv", row.names = 1)
+
+otu <- t(otu)
+
+alpha_index <- function(x, base = exp(1)) {    
+  observed_species <- estimateR(x)[1,]
+  richness <- rowSums(x > 0)	
+  chao1 <- estimateR(x)[2, ]	
+  ace <- estimateR(x)[4, ]
+  shannon <- diversity(x, index = 'shannon', base = base)	
+  simpson <- diversity(x, index = 'simpson')	
+  pielou <- diversity(x, index = 'shannon', base = base) / log(estimateR(x)[1, ], base)	
+  goods_covers <- 1 - rowSums(x == 1) / rowSums(x)	
+  result <- data.frame(observed_species, richness, chao1, ace, shannon, simpson, pielou, goods_covers)
+}
+alpha <- alpha_index(otu)
+alpha$name <- rownames(alpha)
+alpha$group <- c(rep('NCA', 175), rep('primary sCAD', 161),rep('ACS', 212), rep('recovery sCAD', 52)) 
+write.csv(alpha, "alpha.csv",row.names = T )
+
+library(ggplot2)
+library(ggsignif)
+library(ggsci)
+library(ggpubr)
+library(forcats)
+
+df <- read.table(file="alpha.txt",sep="\t",header=T,check.names=FALSE ,row.names=1)
+head(df)
+
+df$group <-fct_inorder(df$group)
+df$class <- as.factor(df$group)
+levels(df$class)
+compare <- compare_means(simpson~class,df,method = "wilcox.test")
+com_list <- list()
+for (i in 1:nrow(compare)){com_list[[i]] <- c(compare$group1[i],compare$group2[i])
+}
+col=c("#72bcd5","#e76254","#82B29A","#F7AA58","#82B29A","#F7AA58","#72bcd5","#E57B7F","#BDB5E1","#72bcd5","#FA8600","#457B9D")
+p1 <- ggplot(df,aes(group,simpson))+geom_violin(aes(fill=group),trim =F )+
+  geom_boxplot(width=0.05)+geom_jitter(shape = 16, size = 2, position = position_jitter(0.05))+
+  stat_compare_means(comparisons = com_list,test = "wilcox.test",step.increase = 0.3,map_signif_level = T)+
+  theme_bw()+scale_fill_manual(values = col)
+p1
+
+
+
+p1 <- ggplot(df,aes(group,shannon))+geom_violin(aes(fill=group),trim =F )+
+  geom_boxplot(width=0.05)+geom_jitter(shape = 16, size = 2, position = position_jitter(0.05))+
+  theme_bw()+scale_fill_manual(values = col)
+p1
+
+
+```
+
+## graphlan_plot
+
+You can also embed plots, for example:
+
+```{r graphlan}
+
+options(warn = -1) # Turn off warning
+
+#library(optparse)
+site="https://mirrors.tuna.tsinghua.edu.cn/CRAN"
+
+if (!suppressWarnings(suppressMessages(require("optparse", character.only = TRUE, 
+                        quietly = TRUE, warn.conflicts = FALSE)))) {
+ install.packages(p, repos=site)
+ require("optparse",character.only=T)
+}
+
+if (TRUE){
+  option_list = list(
+    make_option(c("-i", "--input"), type="character", default="taxonom2.spf",
+                help="Metadata of metaphlan4 [default %default]"),
+    make_option(c("-n", "--number"), type="numeric", default=150,
+                help="Top number threshold [default %default]"),
+    make_option(c("-c", "--colname"), type="character", default="Group",
+                help="Select group column name to use in metadata.txt, e.g. Group [default %default]"),
+    make_option(c("-d", "--design"), type="character", default="metadata.tsv",
+                help="Design file or metadata [default %default]"),
+    make_option(c("-g", "--group"), type="character", default="all",
+                help="Specify the desired group, comma seperate. e.g. A,B,C,D [default %default]"),
+    make_option(c("-t", "--type"), type="character", default="heatmap",
+                help="specify plot type, e.g. heatmap, bar, [default %default]"),
+    make_option(c("-o", "--output"), type="character", default=".",
+                help="Output pdf directory. [default %default]"))
+ 
+  opts = parse_args(OptionParser(option_list=option_list))
+}
+if(opts$output==""){opts$output="."}
+suppressWarnings(dir.create(opts$output, showWarnings = F,recursive=T))
+
+number = opts$number
+if (substr(opts$output,length(opts$output),length(opts$output)) == "/||\\."){
+  out <- output}else{out <- paste0(opts$output,"/")}
+
+
+all_tax <- c("Kingdom","Phylum", "Class", "Order", "Family", "Genus", "Species")
+taxonomy = read.table(opts$input,header = T,row.names = NULL,
+           sep = "\t",quote = "",check.names = F)
+#taxonomy = read.table("taxonomy2.spf",header = T,row.names = NULL,
+#           sep = "\t",quote = "",check.names = F)
+tax_id <- intersect(colnames(taxonomy),all_tax)
+#tax_id[length(tax_id)]
+# taxonomy
+taxonomy <- subset(taxonomy,taxonomy[,tax_id[length(tax_id)]] != "unclassified")
+# taxonomy[,tax_id[length(tax_id)]]
+for(i in tax_id){
+	for (j in c(1:nrow(taxonomy))){
+		if (length(grep("__",taxonomy[j,i]))!=0){
+			taxonomy[j,i] <- substr(taxonomy[j,i],4,nchar(taxonomy[j,i])) 
+		}
+	else{taxonomy[j,i] <- taxonomy[j,i]
+      	}
+	}
+}
+row.names(taxonomy) <- taxonomy[,tax_id[length(tax_id)]]
+
+metadata = read.table(opts$design, sep="\t", header = TRUE, row.names = 1, 
+           stringsAsFactors = F, comment.char = "")
+#metadata = read.table("metadata.txt", sep="\t", header = TRUE, row.names = 1, 
+#           stringsAsFactors = F, comment.char = "")
+#colnames(metadata) <- c("Group")
+GROUPNAME <- opts$colname
+#GROUPNAME
+#GROUPNAME  <- c("Group")
+metadata <- subset(metadata,select=GROUPNAME)
+group <- opts$group
+#group <- "Z,DSS"
+if (group == "all"){
+  metadata <- metadata
+  group <- unique(metadata[,GROUPNAME])
+  #group
+}else{
+  group <- unlist(strsplit(group,","))
+  metadata <- subset(metadata,metadata[,GROUPNAME] == group)
+}
+
+#head(metadata)
+
+norm = as.data.frame(t(t(taxonomy[,row.names(metadata)])/colSums(taxonomy[,row.names(metadata)],na=T)*100))
+
+idx = order(rowMeans(norm), decreasing = T)
+norm = norm[idx,]
+######################################################################################
+
+filtered_taxonomy = head(norm, number)
+#head(filtered_taxonomy)
+#
+tax_mean <- data.frame(matrix(ncol=0,nrow=nrow(filtered_taxonomy)))
+col_names <- data.frame(matrix(ncol=0,nrow=0))
+#head(group)
+for (i in group){
+ temp <- subset(metadata,metadata[,GROUPNAME] == eval(i))
+ temp_tax <- filtered_taxonomy[,row.names(temp)]
+
+ #tem_norm = as.data.frame(t(t(temp_tax)/colSums(temp_tax,na=T)*100))
+ tem_norm_mean <- round(rowMeans(temp_tax),4)
+ min_tem_norm_mean <- min(tem_norm_mean)
+ max_tem_norm_mean <- max(tem_norm_mean)
+ col_names[i,1] <- eval(i)
+ col_names[i,2] <- min_tem_norm_mean
+ col_names[i,3] <- max_tem_norm_mean
+ tax_mean <- cbind(tem_norm_mean,tax_mean)
+}
+#col_names
+colnames(tax_mean) <- col_names[,1]
+colnames(col_names) <- c("Inner2Outer","Range_min","Range_max")
+
+spf_file <- paste0(out,"taxonomy_mean.spf")
+write.table(paste0(tax_id[length(tax_id)],"\t"), file=spf_file, append = F, sep="\t", quote=F, eol = "", row.names=F, col.names=F)
+suppressWarnings(write.table(tax_mean, file=spf_file, append = T, sep="\t", quote=F, row.names=T, col.names=T))
+
+#head(tax_mean)
+taxonomy_id <- taxonomy[row.names(tax_mean),]
+#head(taxonomy_id)
+
+taxid = taxonomy_id
+#head(taxonomy_id)
+
+all_tax <- c("Phylum", "Class", "Order", "Family", "Genus", "Species")
+#all_tax
+only_tax_id <- intersect(colnames(taxonomy_id),all_tax)
+#only_tax_id
+tree = data.frame(taxid[,only_tax_id], stringsAsFactors = F)
+
+tree[,1] = paste("p__",tree[,1],sep = "")
+tree[,2] = paste("c__",tree[,2],sep = "")
+tree[,3] = paste("o__",tree[,3],sep = "")
+tree[,4] = paste("f__",tree[,4],sep = "")
+#head(tree)
+if (ncol(tree) == 5){
+  head(tree)
+  tree[,4] = paste("",tree[,4],sep = "")
+  }else{if (ncol(tree) == 6){
+    tree[,5] = paste("",tree[,5],sep = "")
+  }else{
+    tree[,5] = paste("",tree[,5],sep = "")
+    if (ncol(tree) == 7){
+      tree[,6] = paste("",tree[,6],sep = "")
+    }
+  }
+}
+
+idx = tree[,6] %in% "Unassigned"
+
+tree = tree[!idx,]
+tax_mean = tax_mean[!idx,]
+#head(tree)
+
+tree[,6] = gsub('_\\w*',"",tree[,6])
+tree_file <- paste0(out,"tree1_backbone.txt")
+write.table(tree, file=tree_file, sep=".", col.names=F, row.names=F, quote=F)
+#head(tree)
+
+Phylum = unique(tree[,1]) 
+Class = unique(tree[,2])
+Order = unique(tree[,3])
+Family = unique(tree[,4])
+Genus = unique(tree[,5])
+if (ncol(tree) >5){
+  Species = unique(tree[,6])
+  if (ncol(tree) >6){
+    Strain = unique(tree[,7])
+  }
+}
+
+pro = tree[tree[,1]=="p__Proteobacteria",6]
+act = tree[tree[,1]=="p__Actinobacteria",6] 
+bac = tree[tree[,1]=="p__Bacteroidetes",6]
+fir = tree[tree[,1]=="p__Firmicutes",6]
+
+label_color = data.frame(stringsAsFactors = F)
+for (element in Species)
+{
+ #element
+ anno = data.frame(stringsAsFactors = F)
+ anno[1,1] = element
+ anno[1,2] = "annotation"
+ anno[1,3] = "*"
+
+ anno[2,1] = element
+ anno[2,2] = "annotation_rotation"
+ anno[2,3] = "90"
+ 
+ anno[3,1] = element
+ anno[3,2] = "annotation_background_color" 
+ 
+ if (element %in% pro)
+ {
+  anno[3,3] = "#85F29B"
+ } else if (element %in% act)
+ {
+  anno[3,3] = "#9E3150"  
+ } else if (element %in% fir)
+ {
+  anno[3,3] = "#C493FF" 
+ } else if (element %in% bac)
+ {
+  anno[3,3] = "#91DBF6"  
+ } else {
+  anno[3,3] = "grey"  
+ }
+ label_color = rbind(label_color,anno)
+}
+tree_file2 <- paste0(out,"tree2_label_color.txt")
+write.table(label_color, tree_file2, sep = "\t", quote = F,col.names = F,row.names = F, na="")
+#head(label_color)
+global <- data.frame(
+  "global tree options"=c("ignore_branch_len","total_plotted_degrees", "start_rotation",
+                          "clade_separation","branch_bracket_depth","branch_bracket_width",
+                          "branch_thickness","branch_color","branch_color_from_ancestor",
+                          "annotation_background_width","annotation_background_alpha",
+                          "annotation_background_separation","annotation_background_offset",
+                          "annotation_legend_font_size","clade_marker_size","clade_marker_shape",
+                          "clade_marker_edge_width","clade_marker_edge_color","clade_marker_font_color",
+                          "p__Actinobacteria*","p__Proteobacteria*","p__Bacteroidetes*",
+                          "p__Firmicutes*","p__Proteobacteria","p__Actinobacteria",
+                          "p__Bacteroidetes","p__Firmicutes"),
+  "param" = c(0,360,-96,0.0,0.8,0.5,0.75,"black",1,0.6,0.2,-0.5,0.02,7,16,"o",0.25,"black","k",
+              rep("clade_marker_color",4),rep("annotation_background_color",4)),
+  "color" = c(rep("",19),"#EF5656","#2BB065","#47B3DA","#F7A415","#B0FFC0","#FFB0B0",
+              "#B0E9FD","#FCDBA2"))
+#global
+#write.table("#", "graphlan_annotate.txt",sep="\t",quote = F,col.names = F,row.names = F, na="")
+annotation_file <- paste0(out,"graphlan_annotate.txt")
+write.table(global, annotation_file,sep="\t",quote = F,col.names = F,row.names = F, na="")
+write.table(label_color, annotation_file, sep = "\t",append=T, quote = F,col.names = F,row.names = F, na="")
+cmd_raw1 <- paste0("graphlan_annotate.py --annot ",annotation_file," ",tree_file,"  ",out,"graphlan.xml")
+system(cmd_raw1)
+
+cmd_raw <- paste0("graphlan.py ",out,"graphlan.xml ",out,"graphlan1_tree_raw.pdf --size 5")
+system(cmd_raw)
+
+type <- opts$type
+if (type == "heatmap"){
+  heat_cfg <- data.frame("ring"=c("ring_internal_separator_thickness","ring_width","ring_color"))
+  heat_cfg_param <- data.frame("color"=c(0.5,1))
+  colors <- c("#72BCD5", "#F7AA58", "#E76254", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494")
+  #colors <- c('blue', 'green', 'red', 'cyan', 'magenta',  'yellow', 'black', 'white')
+  #system("rm track.heatmap")
+  for (i in 1:length(group)){
+    temp_ring <- heat_cfg
+    temp_ring$width <- rep(eval(i))
+    temp_param <- heat_cfg_param
+    temp_param[3,1] <- colors[i]
+    col_names[i,4] <- colors[i]
+    temp <- cbind(temp_ring,temp_param)
+    #write.table("#", file="graphlan_annotate.txt", append = T, quote=F, eol = "", row.names=F, col.names=F)
+    write.table(temp, file=annotation_file, append = T, sep = "\t", quote=F, row.names=F, col.names=F)
+    temp_data <- data.frame(matrix(ncol=0,nrow=nrow(tax_mean)))
+    temp_data$"ring_alpha" <- rep("ring_alpha")
+    temp_data$"ring_number" <- rep(i)
+    temp_data$"alpha" <- tax_mean[,group[i]]
+    row.names(temp_data) <- row.names(tax_mean)
+    write.table(temp_data,file=annotation_file, append = T, sep = "\t",quote = F,col.names = F,row.names = T, na="")
+    col_names
+    legend_file <- paste0(out,"Ring_legend_inner-outer.txt")
+    write.table(col_names,legend_file,quote = F,col.names = T,row.names = F)
+    cmd_heatmap1 <- paste0("graphlan_annotate.py --annot ",annotation_file, " ",tree_file,"  ",out,"graphlan.xml")
+    
+    system(cmd_heatmap1)
+    cmd_heatmap <- paste0("graphlan.py ",out,"graphlan.xml ",out,"graphlan1_tree_heatmap.pdf --size 5")
+    system(cmd_heatmap)
+  }
+}else{if  (type == "bar"){
+  bar_cfg <- data.frame("ring"=c("ring_internal_separator_thickness","ring_width","ring_color"))
+  bar_cfg_param <- data.frame("color"=c(0.5,0.5))
+  colors <- c("#72BCD5", "#F7AA58", "#E76254", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494")
+  
+  for (i in 1:length(group)){
+    temp_bar <- bar_cfg
+    temp_bar$width <- rep(eval(i))
+    temp_param <- bar_cfg_param
+    temp_param[3,1] <- colors[i]
+    col_names[i,4] <- colors[i]
+    temp <- cbind(temp_bar,temp_param)
+    
+    write.table(temp, file=annotation_file, append = T, sep = "\t", quote=F, row.names=F, col.names=F)
+    temp_data <- data.frame(matrix(ncol=0,nrow=nrow(tax_mean)))
+    temp_data$"ring_height" <- rep("ring_height")
+    temp_data$"ring_number" <- rep(i)
+    temp_data$"height" <- tax_mean[,group[i]]
+    row.names(temp_data) <- row.names(tax_mean)
+    write.table(temp_data,file=annotation_file, append = T, sep = "\t",quote = F,col.names = F,row.names = T, na="")
+    col_names
+    legend_file <- paste0(out,"Bar_legend_inner-outer.txt")
+    write.table(col_names,legend_file,quote = F,col.names = T,row.names = F)
+    cmd_heatmap1 <- paste0("graphlan_annotate.py --annot ",annotation_file, " ",tree_file,"  ",out,"graphlan.xml")
+    
+    system(cmd_heatmap1)
+    cmd_heatmap <- paste0("graphlan.py ",out,"graphlan.xml ",out,"graphlan1_tree_bar.pdf --size 5")
+    system(cmd_heatmap)
+    }
+  }
+}
+
+
+
+```
+
+
+## ordinationErrorBarPlot
+
+```{r ordinationError}
+args <- c("PCOA_points.txt", "metadata_PCOA.txt", "PCoA","group")
+in_points_txt <- args[1]
+metafile <- args[2]
+outprefix <- args[3]
+column <- args[4]
+print(length(args))
+
+library("openxlsx")
+library("dplyr")
+library("reshape2")
+library("ggplot2")
+library("ggpubr")
+
+
+df <- read.table(in_points_txt,fill=T, header=T, check.names=F, sep="\t", as.is=T, numerals="no.loss", quote="")
+colnames(df)[1] <- "name"
+
+
+meta <- read.table(metafile, fill=T, header=T, check.names=F, sep="\t", as.is=T, numerals="no.loss", quote="")
+meta
+design <- meta[[column]]
+names(design) <- meta$name
+
+###################################
+# change col order
+df_samples <- df$name
+meta_samples <- meta$name
+
+print("data sample not in meta samples:")
+print(df_samples[! df_samples %in% meta_samples])
+
+print("meta sample not in data samples:")
+print(meta_samples[! meta_samples %in% df_samples])
+
+new_samples <- meta_samples[meta_samples %in% df_samples]
+
+df <- df[df$name %in% new_samples,]
+meta <- meta[meta$name %in% new_samples,]
+###################################
+
+# u1 <- meta$name
+# u2 <-  df$name
+# insect <- intersect(u1, u2)
+# if ( ! ( length(u1) == length(u2) & length(insect) == length(u2) ) ){
+#     stop("Sample Errors")
+# }
+
+df$group <- factor(design[df$name], levels=unique(meta[[column]]))
+p1n <- colnames(df)[2]
+p2n <- colnames(df)[3]
+colnames(df)[2] <- "p1"
+colnames(df)[3] <- "p2"
+
+dfg <- df %>% group_by(group) %>% summarise(
+    mean_p1=mean(p1), 
+    up_p1=(mean(p1) + sd(p1)/sqrt(length(p1))),
+    low_p1=(mean(p1) - sd(p1)/sqrt(length(p1))),
+    mean_p2=mean(p2), 
+    up_p2=(mean(p2) + sd(p2)/sqrt(length(p2))),
+    low_p2=(mean(p2) - sd(p2)/sqrt(length(p2))),
+    .groups = 'drop') %>% ungroup() %>% as.data.frame()
+
+if (length(args) > 4){
+   
+    dfg$g2 <- t(data.frame(strsplit(dfg$group, "_")))[,2]
+}else{
+    
+    dfg$g2 <- dfg$group
+}
+
+x_mov <- ( max(dfg$up_p1) - min(dfg$low_p1) ) / 50
+y_mov <- ( max(dfg$up_p2) - min(dfg$low_p2) ) / 50
+
+p <- ggplot(data = dfg, aes(x=mean_p1, y=mean_p2, color=g2)) + geom_point() + 
+  geom_errorbar(aes(group = group, ymax = up_p2, ymin = low_p2), position = position_dodge(width = 0.1), width = 0.001) + 
+  geom_errorbar(aes(group = group, xmax = up_p1, xmin = low_p1), position = position_dodge(width = 0.1), width = 0.001) + 
+  xlab(p1n) + ylab(p2n) + geom_text(aes(x=mean_p1, y=mean_p2, label=group), vjust=1.5, hjust=-0.3, size=3) + 
+  theme(legend.position="none")+ xlim(c(min(dfg$low_p1), max(dfg$up_p1)*1.2))
+p
+pdf(paste0(outprefix,"ordinationErrorBar.pdf"))
+dev.off()
+
+```
+
+

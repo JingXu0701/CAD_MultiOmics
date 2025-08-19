@@ -1,0 +1,209 @@
+---
+title: "correlation"
+author: "daidie"
+date: "2024/12/23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("readxl")
+library(psych)
+library("Hmisc")
+library(tidyr)
+library(pheatmap)
+library(dplyr)
+```
+
+## Data Prepare
+### clinical data
+
+```{r dataprepare}
+clinicalData <-  read_excel("Metaphlan4-SabunMet.xlsx")
+
+cli_index <- c("SampleName","TG","LDL.C", "HDL.C","Lp_a","LDH" ,"ApoA","ApoB" ,"Waistline","BMI", "SCr","Hs.CRP" ,"NT.ProBNP","HBA1c" ,"TCHO","GLU")
+
+cli_order <- c("NT.ProBNP","LDH" ,"Hs.CRP" ,"GLU","HBA1c" ,"Waistline","BMI","SCr","ApoA","ApoB", "TG","TCHO","HDL.C","LDL.C",
+                "Lp_a") 
+              
+cli_select <- clinicalData %>%　select(all_of(cli_index)) 
+df_index <- data.frame(index =  cli_index, class = "Clinical")
+df_index2 <-  df_index[2:nrow(df_index),] 
+
+```
+
+### ACS Specific
+
+```{r dataprepareSpecies}
+
+batch2_combine <- read.csv("batch2_species_merge.csv")
+names(batch2_combine)[2] <- "Sample"
+
+## ACS specific species
+ACSspecies_list <-c("Sample","Mogibacterium_diversum","Bifidobacterium_bifidum","Streptococcus_oralis" ,"Bifidobacterium_longum","Candidatus_Nanosynsacchari_sp_TM7_ANC_38_39_G1_1",
+"Streptococcus_vestibularis" , "Streptococcus_constellatus","Clostridium_butyricum",
+"Streptococcus_gordonii","Eggerthella_lenta","Streptococcus_anginosus" ,"GGB79998_SGB48024" ,"Clostridium_SGB6179" ,"Desulfovibrio_SGB5076","GGB3828_SGB5197" ,"Lacrimispora_amygdalina")  ## 16个
+
+ACSspeciesData <- batch2_combine %>% select(all_of(ACSspecies_list))
+
+df_index_Species <- data.frame(index =  ACSspecies_list, class = "Species")
+df_index2_Species <-  df_index_Species[2:nrow(df_index_Species),] ## 16个
+
+
+```
+
+
+
+### ACS specific metabolites
+```{r dataprepareMet}
+
+## ACS specific metabolites
+ACS_polar <-  read_excel("ACSspecial_new20241225.xlsx",sheet = 3)
+ACS_lipid <-  read_excel("ACSspecial_new20241225.xlsx",sheet = 4)
+
+ACS_polar_list <- ACS_polar$Name 
+ACS_lipid_list <- ACS_lipid$...1 
+
+df_index_polar <- data.frame(index =  ACS_polar_list, class = "Polar")
+df_index_lipid <- data.frame(index =  ACS_lipid_list, class = "Lipids")
+
+
+## 
+dir1 <- "GX/"
+batch2polor <-read_excel(paste0(dir1,"BasedData/Metabolomics4Groups.xlsx"), sheet = 3)
+batch2lipid <-read_excel(paste0(dir1,"BasedData/Metabolomics4Groups.xlsx"), sheet = 2)
+names(batch2polor)[1:2] <-c("Num","Met")
+names(batch2lipid)[1:2] <-c("Num","Met")
+
+batch2polor <-rbind(batch2polor,batch2lipid)
+
+## batch2
+batch2polor[1,1] <- c("Group")
+batch2polor[1,2] <- c("PolarName")
+names(batch2polor)[2] <- "PolarName"
+batch2polor$PolarName <- gsub("[*]","",batch2polor$PolarName)
+
+batch2polo_select <- batch2polor %>% subset(PolarName %in% c(ACS_polar_list,ACS_lipid_list))
+batch2polo_select1 <- batch2polo_select[,2:ncol(batch2polo_select)]
+
+##
+batch2polor1 <- t(batch2polo_select1) %>% data.frame(stringsAsFactors = FALSE)
+batch2polor2 <- batch2polor1[2:nrow(batch2polor1),]
+names(batch2polor2) <- batch2polo_select1$PolarName
+batch2polor2$changed_name <- rownames(batch2polor2)
+
+```
+
+
+### combine ACS specific data
+```{r combine, echo=FALSE}
+match600_1 <- read_xlsx("4group.xlsx")
+
+batch2polor3 <- merge(match600_1,batch2polor2,by = "changed_name",all = FALSE)
+batch2selectMet <- batch2polor3[,c(1,10:ncol(batch2polor3))]
+
+#cli_select
+names(cli_select)[1] <- "metaphlan_name_600"
+batch2cli <- merge(match600_1,cli_select,by =  "metaphlan_name_600",all = FALSE)
+batch2selectCli <- batch2cli[,c(6,9,10:ncol(batch2cli))]
+
+
+names(ACSspeciesData)[1] <- "changed_name" 
+merge0 <- merge(ACSspeciesData,batch2selectMet,by = "changed_name" ,all = TRUE)
+merge1 <- merge(ACSspeciesData,batch2selectMet,by = "changed_name" ,all = FALSE)
+merge2 <- merge(batch2selectCli,merge1,by = "changed_name" ,all = FALSE) 
+rownames(merge2) <- merge2$changed_name
+
+merge3 <- merge2[ merge2$new_class != "D",c(3:ncol(merge2))]
+
+```
+
+
+```{r function, echo=FALSE}
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+
+```
+
+```{r corr_calculate, echo=FALSE}
+feature_class <- rbind(df_index2,df_index2_Species,df_index_polar,df_index_lipid)
+feature_class1 <- read_excel("output/ACS_specific/feature_class_arr.xlsx",sheet = 1)
+
+data_clean <- na.omit(merge3)
+res2 <- rcorr(as.matrix(data_clean))
+cor_p <- flattenCorrMatrix(res2$r, res2$P)
+cor_p$p_adjust <- p.adjust(cor_p$p, method = "BH") ## 3081
+
+names(feature_class)<-c("row","class1")
+cor_p1 <-merge(cor_p,feature_class,by ="row" , all =TRUE)
+cor_p2 <- cor_p1[!is.na(cor_p1$cor),]
+
+names(feature_class)<-c("column","class2")
+cor_p3 <-merge(cor_p2,feature_class,by ="column" , all =TRUE)
+cor_p3 <- cor_p3[!is.na(cor_p3$cor),]
+
+clinical_corr <- cor_p3 %>%
+  subset( (class1 == "Clinical" & class2 != "Clinical") | (class2 == "Clinical" & class1 != "Clinical"))
+
+df <- clinical_corr[,c(1:3)]
+
+df_wide <- pivot_wider(df, names_from = column, values_from = cor)
+df <- clinical_corr[,c(1:2,5)]
+df_wide_q <- pivot_wider(df, names_from = column, values_from = p_adjust)
+df_wide_q1 <- df_wide_q[,2:ncol(df_wide_q)]
+df_wide_q <- as.data.frame(df_wide_q)
+df_wide_q1 <- as.data.frame(df_wide_q1)
+rownames(df_wide_q1) <- df_wide_q$row
+
+#####--------------------------------------------------------------------------
+df_wide <- as.data.frame(df_wide)
+rownames(df_wide) <- df_wide$row
+df_wide1 <- df_wide[,2:ncol(df_wide)]
+
+desired_order <- feature_class1$column
+valid_order <- desired_order[desired_order %in% names(df_wide1)]
+df_reordered <- df_wide1 %>%  select(all_of(valid_order))
+df_wide_q1 <- df_wide_q1 %>%  select(all_of(valid_order))
+
+df_reordered2 <- df_reordered[cli_order, ]
+df_wide_q2 <- df_wide_q1[cli_order, ]
+
+paletteLength <- 50
+myColor <- colorRampPalette(c("SkyBlue", "white", "firebrick3"))(paletteLength)
+test<-df_reordered
+myBreaks <- c(seq(min(test), 0, length.out=ceiling(paletteLength/2) + 1), 
+              seq(max(test)/paletteLength, max(test), length.out=floor(paletteLength/2)))
+
+annotation_col <- data.frame(feature_class1)
+rownames(annotation_col) <- annotation_col$column
+annotation_col <-annotation_col[,c(3,2)]
+names(annotation_col) <- c("ACS_trend","Class")
+ann_colors = list(
+  Class = c(Species = "#377483",Polar = "#4F845C",Lipids="#B696B6"),
+  ACS_trend = c(Up = "#E89DA0", Down = "SkyBlue")
+)
+p <- pheatmap(df_reordered2,cluster_rows = FALSE,cluster_col = FALSE,gaps_col = c(16, 42),
+              color=myColor, breaks=myBreaks,annotation_col = annotation_col,annotation_colors = ann_colors,
+              display_numbers = matrix(ifelse(df_wide_q2 < 0.01, "***",
+                              ifelse(df_wide_q2 < 0.05, "**", 
+                             ifelse(df_wide_q2 < 0.2, "*", ""))), nrow(df_wide_q1))
+       )
+
+pdf("output/ACS_specific/corr_ACS.pdf",width = 12,height = 7)
+p
+dev.off()
+```
